@@ -1,0 +1,11 @@
+fastapi==0.115.0
+uvicorn[standard]==0.31.0
+strawberry-graphql[fastapi]==0.229.2
+pydantic==2.7.4
+pydantic-settings==2.6.1
+httpx==0.27.2
+python-dotenv==1.0.1
+loguru==0.7.2
+pytest==8.3.3
+pytest-asyncio==0.24.0
+
