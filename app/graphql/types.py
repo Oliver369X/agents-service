@@ -35,5 +35,3 @@ class OCRResult:
     text: str
     confidence: Optional[float] = None
     raw: Optional[str] = None
-
-

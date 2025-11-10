@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    agents_host: str = "0.0.0.0"
+    agents_host: str = "localhost"
     agents_port: int = 5020
 
     gemini_api_key: str | None = None

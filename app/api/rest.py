@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, Union
 
 import httpx
 from fastapi import APIRouter, HTTPException, Header, status
@@ -29,18 +29,31 @@ class ChatMessageModel(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: List[ChatMessageModel] | None = None
+    messages: List[Union[ChatMessageModel, str, dict]] | None = None
     prompt: str | None = None
 
     @model_validator(mode="after")
     def validate_request(self) -> "ChatRequest":
         if self.messages:
+            normalized_messages = []
+            for msg in self.messages:
+                if isinstance(msg, str):
+                    normalized_messages.append(
+                        ChatMessageModel(role="user", content=msg)
+                    )
+                elif isinstance(msg, dict):
+                    normalized_messages.append(ChatMessageModel(**msg))
+                else:
+                    normalized_messages.append(msg)
+            self.messages = normalized_messages
             return self
+        
         if self.prompt and self.prompt.strip():
             self.messages = [
                 ChatMessageModel(role="user", content=self.prompt.strip()),
             ]
             return self
+        
         raise ValueError("Debes enviar al menos un mensaje o un prompt")
 
 
@@ -65,10 +78,24 @@ class OCRResponseModel(BaseModel):
 
 
 async def _call_gemini(messages: List[ChatMessageModel]) -> dict[str, Any]:
+    """
+    Llama a Gemini con el formato correcto.
+    Gemini espera: {"contents": [{"role": "user", "parts": [{"text": "..."}]}]}
+    """
     try:
         client = GeminiClient()
-        payload = [{"text": msg.content, "role": msg.role} for msg in messages]
-        return await client.chat(payload)
+        
+        # Transformar a formato Gemini
+        gemini_messages = []
+        for msg in messages:
+            # Gemini no soporta 'system', convertirlo a 'user'
+            role = "user" if msg.role == "system" else msg.role
+            gemini_messages.append({
+                "role": role,
+                "parts": [{"text": msg.content}]
+            })
+        
+        return await client.chat(gemini_messages)
     except (RuntimeError, httpx.HTTPError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -88,7 +115,13 @@ def _format_gemini_response(data: dict[str, Any]) -> List[GeminiMessageModel]:
 
 @router.post("/chat", response_model=ChatResponseModel)
 async def chat_endpoint(request: ChatRequest) -> ChatResponseModel:
-    assert request.messages  # asegurado por el validador
+    """
+    Endpoint de chat flexible que acepta:
+    - {"messages": ["texto"]} -> array de strings
+    - {"messages": [{"role": "user", "content": "texto"}]} -> array de objetos
+    - {"prompt": "texto"} -> string simple
+    """
+    assert request.messages  # garantizado por el validador
     data = await _call_gemini(request.messages)
     formatted = _format_gemini_response(data)
     return ChatResponseModel(messages=formatted, raw=data)
@@ -114,7 +147,6 @@ async def ocr_endpoint(request: OCRRequest) -> OCRResponseModel:
         raw=data,
     )
 
-
 # --- Endpoints del orquestador proactivo ---
 
 
@@ -128,6 +160,8 @@ class BudgetAuditResponse(BaseModel):
 @router.post("/audit-budget", response_model=BudgetAuditResponse)
 async def audit_budget_endpoint(user_id: str, authorization: str | None = Header(None)) -> BudgetAuditResponse:
     """Auditoría proactiva de presupuestos del usuario."""
+    print("Authorization header:", authorization)
+    print("User ID:", user_id)
     orchestrator = AgentOrchestrator(user_id=user_id, token=authorization)
     result = await orchestrator.run_budget_audit()
     return BudgetAuditResponse(**result)

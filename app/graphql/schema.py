@@ -28,6 +28,7 @@ from .types import ChatMessageInput, ChatResponse, GeminiMessage, HealthStatus, 
 class Query:
     @strawberry.field
     def health(self) -> HealthStatus:
+        """Health check del servicio de agentes."""
         settings = get_settings()
         integrations: List[str] = []
         if settings.gemini_api_key:
@@ -41,16 +42,27 @@ class Query:
 class Mutation:
     @strawberry.mutation
     async def chat(self, messages: List[ChatMessageInput]) -> ChatResponse:
+        """Chat conversacional con Gemini."""
         try:
             client = GeminiClient()
-            payload = [{"text": m.content, "role": m.role} for m in messages]
-            response = await client.chat(payload)
+            # Transformar a formato Gemini
+            gemini_messages = []
+            for m in messages:
+                role = "user" if m.role == "system" else m.role
+                gemini_messages.append({
+                    "role": role,
+                    "parts": [{"text": m.content}]
+                })
+            
+            response = await client.chat(gemini_messages)
             candidates = response.get("candidates", [])
             formatted: List[GeminiMessage] = []
+            
             for candidate in candidates:
                 parts = candidate.get("content", {}).get("parts", [])
                 content = " ".join(part.get("text", "") for part in parts)
                 formatted.append(GeminiMessage(role="model", content=content.strip()))
+            
             return ChatResponse(messages=formatted, raw=json.dumps(response))
         except (RuntimeError, httpx.HTTPError) as exc:
             logger.error("Error en chat Gemini: {}", exc)
@@ -58,6 +70,7 @@ class Mutation:
 
     @strawberry.mutation
     async def analyze_document(self, document_url: str) -> OCRResult:
+        """Análisis OCR de documentos con Mistral."""
         try:
             client = MistralOCRClient()
             response = await client.extract_text(document_url)
@@ -68,11 +81,9 @@ class Mutation:
             logger.error("Error en OCR Mistral: {}", exc)
             raise ValueError(f"No se pudo procesar el documento: {exc}") from exc
 
-    # --- Mutaciones del orquestador proactivo ---
-
     @strawberry.mutation
     async def audit_budget(self, user_id: str, info: Info) -> BudgetAuditResult:
-        """Auditoría proactiva de presupuestos."""
+        """Auditoría proactiva de presupuestos del usuario."""
         token = info.context.get("request").headers.get("authorization")
         orchestrator = AgentOrchestrator(user_id=user_id, token=token)
         result = await orchestrator.run_budget_audit()
@@ -84,11 +95,15 @@ class Mutation:
         )
 
     @strawberry.mutation
-    async def process_document(self, user_id: str, input: ProcessDocumentInput, info: Info) -> ProcessDocumentResult:
-        """Procesa un documento con OCR y registra la transacción."""
+    async def process_document(
+        self, user_id: str, input: ProcessDocumentInput, info: Info
+    ) -> ProcessDocumentResult:
+        """Procesa documento con OCR y registra transacción automáticamente."""
         token = info.context.get("request").headers.get("authorization")
         orchestrator = AgentOrchestrator(user_id=user_id, token=token)
-        result = await orchestrator.process_document_and_register(input.document_url, input.account_id)
+        result = await orchestrator.process_document_and_register(
+            input.document_url, input.account_id
+        )
         return ProcessDocumentResult(
             status=result["status"],
             transaction_id=result.get("transaction", {}).get("id"),
@@ -97,20 +112,38 @@ class Mutation:
         )
 
     @strawberry.mutation
-    async def generate_savings_plan(self, user_id: str, input: SavingsPlanInput, info: Info) -> SavingsPlanResult:
-        """Genera un plan de ahorro personalizado."""
+    async def generate_savings_plan(
+        self, user_id: str, input: SavingsPlanInput, info: Info
+    ) -> SavingsPlanResult:
+        """Genera plan de ahorro personalizado con IA."""
         token = info.context.get("request").headers.get("authorization")
         orchestrator = AgentOrchestrator(user_id=user_id, token=token)
-        result = await orchestrator.generate_savings_plan(input.target_amount, input.months)
+        result = await orchestrator.generate_savings_plan(
+            input.target_amount, input.months
+        )
         return SavingsPlanResult(
-            status=result["status"], plan=result.get("plan"), target=result.get("target"), months=result.get("months")
+            status=result["status"],
+            plan=result.get("plan"),
+            target=result.get("target"),
+            months=result.get("months"),
         )
 
 
-schema = Schema(query=Query, mutation=Mutation, enable_federation_2=True)
+# Schema Federation
+schema = Schema(
+    query=Query,
+    mutation=Mutation,
+    enable_federation_2=True,
+)
 
 
 def get_graphql_router() -> GraphQLRouter:
+    """Retorna el router GraphQL configurado."""
+    from strawberry.fastapi import GraphQLRouter as StrawberryGraphQLRouter
+    
     settings = get_settings()
-    return GraphQLRouter(schema, graphiql=settings.graphiql_enabled)
-
+    
+    return StrawberryGraphQLRouter(
+        schema,
+        graphiql=settings.graphiql_enabled,
+    )

@@ -1,10 +1,12 @@
 """Tipos GraphQL para el orquestador del agente."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 import strawberry
 
+
+# --- Auditoría de presupuestos ---
 
 @strawberry.type
 class BudgetAuditResult:
@@ -13,6 +15,8 @@ class BudgetAuditResult:
     budgets_reviewed: Optional[int] = None
     message: Optional[str] = None
 
+
+# --- Procesamiento de documentos ---
 
 @strawberry.input
 class ProcessDocumentInput:
@@ -28,6 +32,8 @@ class ProcessDocumentResult:
     message: Optional[str] = None
 
 
+# --- Plan de ahorros ---
+
 @strawberry.input
 class SavingsPlanInput:
     target_amount: float
@@ -41,3 +47,40 @@ class SavingsPlanResult:
     target: Optional[float] = None
     months: Optional[int] = None
 
+
+# --- Categorización inteligente ---
+
+@strawberry.input
+class SmartCategorizeInput:
+    transaction_text: str
+    account_id: str
+    amount: float
+
+
+@strawberry.type
+class SmartCategorizeResult:
+    status: str
+    transaction_id: Optional[str] = None
+    category: Optional[str] = None
+    ml_confidence: Optional[float] = None
+    method: Optional[str] = None
+
+
+# --- Insights financieros ---
+
+@strawberry.type
+class FinancialInsightsResult:
+    status: str
+    patterns: Optional[str] = None  # JSON string
+    forecast: Optional[str] = None  # JSON string
+    analysis: Optional[str] = None
+    generated_at: Optional[str] = None
+
+
+# --- Alertas de gasto ---
+
+@strawberry.type
+class SpendingAlertResult:
+    status: str
+    message: Optional[str] = None
+    anomalies: Optional[int] = None
