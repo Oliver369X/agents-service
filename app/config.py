@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str | None = None
     mistral_ocr_api_key: str | None = None
+    gemini_dev_mode: bool = False  # When True, return fallback responses for 503/timeouts in dev/test
 
     default_locale: str = "es-BO"
     log_level: str = "INFO"

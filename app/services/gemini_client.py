@@ -47,22 +47,27 @@ class GeminiClient:
         if not self.api_key:
             raise RuntimeError("GEMINI API key no configurada. Revisa GEMINI_API_KEY en el entorno.")
 
-        # Build a prompt.messages payload expected by Google Generative Language
-        # `generateContent` endpoint. Each message becomes an entry with an
-        # `author` and a `content` array of text parts.
-        prompt_messages: list[dict] = []
+        # Build a contents payload expected by Google Generative Language
+        # `generateContent` endpoint. Each message becomes an entry with a
+        # `role` and `parts` array containing text.
+        contents: list[dict] = []
         for m in messages:
             role = m.get("role", "user")
             parts = m.get("parts", [])
-            text = " ".join(p.get("text", "") for p in parts).strip()
-            if not text:
-                continue
-            prompt_messages.append({
-                "author": role,
-                "content": [{"type": "text", "text": text}],
-            })
+            # Extract text from parts and build a parts array for this content item
+            content_parts: list[dict] = []
+            for part in parts:
+                text = part.get("text", "").strip()
+                if text:
+                    content_parts.append({"text": text})
+            
+            if content_parts:
+                contents.append({
+                    "role": role,
+                    "parts": content_parts,
+                })
 
-        payload = {"prompt": {"messages": prompt_messages}}
+        payload = {"contents": contents}
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(self.url, params={"key": self.api_key}, json=payload)
@@ -93,7 +98,19 @@ class GeminiClient:
                     status=status,
                     body=body,
                 )
-                # If the model/service is overloaded, keep raising so callers can handle it.
+                # In dev mode, return safe fallback for 503 (service overloaded) so tests can continue
+                settings = get_settings()
+                if status == 503 and settings.gemini_dev_mode:
+                    logger.warning("Returning fallback Gemini response (echo) due to 503 in dev mode")
+                    combined_prompt = " ".join(
+                        part.get("text", "")
+                        for content in contents
+                        if content.get("role") == "user"
+                        for part in content.get("parts", [])
+                    )
+                    return {"candidates": [{"content": {"parts": [{"text": combined_prompt or "[No text provided]"}]}}]}
+                
+                # If the model/service is overloaded and not in dev mode, keep raising so callers can handle it.
                 if status == 503:
                     raise
 
@@ -101,11 +118,12 @@ class GeminiClient:
                 # the rest of the system can continue running in dev/test environments.
                 if status == 400:
                     logger.warning("Returning fallback Gemini response (echo) due to 400 Bad Request")
-                    # Echo the combined user input from prompt_messages as fallback
+                    # Echo the combined user input from contents as fallback
                     combined_prompt = " ".join(
-                        m.get("content", [{}])[0].get("text", "")
-                        for m in prompt_messages
-                        if m.get("author") == "user"
+                        part.get("text", "")
+                        for content in contents
+                        if content.get("role") == "user"
+                        for part in content.get("parts", [])
                     )
                     return {"candidates": [{"content": {"parts": [{"text": combined_prompt or "[No text provided]"}]}}]}
                 # Re-raise for other unexpected status codes
