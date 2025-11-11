@@ -20,6 +20,7 @@ class AgentOrchestrator:
         self.gemini = GeminiClient()
         self.mistral = MistralOCRClient()
         self.notifier = NotificationClient()
+        logger.info(f"[INIT] Orquestador inicializado para usuario: {user_id}")
 
     async def run_budget_audit(self) -> Dict[str, Any]:
         """
@@ -29,43 +30,49 @@ class AgentOrchestrator:
         3. Genera recomendaciones.
         4. Envía notificación si detecta alertas.
         """
-        logger.info("Iniciando auditoría de presupuesto para usuario {}", self.user_id)
+        logger.info(f"🔍 Iniciando auditoría de presupuesto para usuario {self.user_id}")
+        
+        # ... (Bloques 1, 2 y el inicio del 3. Llamar a Gemini se mantienen)
+        
+        # 3️⃣ Llamar a Gemini
+        try:
+            # ... (código para construir el prompt)
+            
+            logger.info("🤖 Enviando prompt a Gemini...")
+            gemini_response = await self.gemini.chat([{"role": "user", "text": prompt}])
+            logger.debug(f"📨 Respuesta bruta de Gemini: {gemini_response}")
+            
+            # --- ✅ CORRECCIÓN CLAVE: EXTRAER Y ASIGNAR EL ANÁLISIS ---
+            analysis_text = self._extract_gemini_text(gemini_response)
+            
+            logger.info(f"✅ Análisis recibido de Gemini (primeros 200 chars): {analysis_text[:200]}...")
+        except Exception as e:
+            logger.exception(f"❌ Error al comunicarse con Gemini: {e}")
+            return {"status": "error", "step": "gemini_analysis", "error": str(e)}
 
-        # 1. Obtener datos
-        budgets = await self.gateway.get_user_budgets(self.user_id)
-        transactions = await self.gateway.get_recent_transactions(self.user_id, limit=20)
+        # 4️⃣ Enviar notificación si hay alertas
+        try:
+            # --- ✅ CORRECCIÓN CLAVE: Usar analysis_text para la verificación ---
+            # Aunque la respuesta de Gemini es JSON, la verificación se hace sobre el texto plano
+            if "alerta" in analysis_text.lower() or "excedido" in analysis_text.lower():
+                logger.warning("🚨 Se detectaron alertas en el análisis. Enviando notificación...")
+                await self.notifier.send_notification(
+                    user_id=self.user_id,
+                    title="Alerta de Presupuesto",
+                    message=analysis_text[:200], # Se usa el texto del análisis para el mensaje
+                    notification_type="WARNING",
+                )
+                logger.info("📩 Notificación enviada exitosamente.")
+            else:
+                logger.info("✅ No se detectaron alertas en el análisis.")
+        except Exception as e:
+            logger.exception(f"❌ Error al enviar notificación: {e}")
+            return {"status": "error", "step": "notification_send", "error": str(e)}
 
-        if not budgets:
-            return {"status": "no_budgets", "message": "Usuario sin presupuestos configurados."}
+        logger.success(f"🎯 Auditoría completada exitosamente para usuario {self.user_id}")
+        # --- ✅ CORRECCIÓN CLAVE: Usar analysis_text en el retorno ---
+        return {"status": "completed", "analysis": analysis_text, "budgets_reviewed": len(budgets)}
 
-        # 2. Preparar contexto para Gemini
-        context = self._build_budget_context(budgets, transactions)
-        prompt = f"""
-Eres un asesor financiero. Analiza el siguiente contexto y genera recomendaciones concretas:
-
-{context}
-
-Responde en formato JSON con:
-- "alerts": lista de alertas detectadas (si hay)
-- "recommendations": lista de recomendaciones prácticas
-- "summary": resumen breve
-"""
-
-        # 3. Llamar a Gemini
-        gemini_response = await self.gemini.chat([{"role": "user", "text": prompt}])
-        analysis = self._extract_gemini_text(gemini_response)
-
-        # 4. Enviar notificación si hay alertas
-        if "alerta" in analysis.lower() or "excedido" in analysis.lower():
-            await self.notifier.send_notification(
-                user_id=self.user_id,
-                title="Alerta de Presupuesto",
-                message=analysis[:200],
-                notification_type="WARNING",
-            )
-
-        logger.info("Auditoría completada para {}", self.user_id)
-        return {"status": "completed", "analysis": analysis, "budgets_reviewed": len(budgets)}
 
     async def process_document_and_register(self, document_url: str, account_id: str) -> Dict[str, Any]:
         """
@@ -178,6 +185,7 @@ Genera un plan de ahorro mensual realista en formato JSON:
         return "\n".join(lines)
 
     def _extract_gemini_text(self, response: Dict[str, Any]) -> str:
+        logger.debug(f"Extrayendo texto de respuesta de Gemini: {response}")
         candidates = response.get("candidates", [])
         if not candidates:
             return ""

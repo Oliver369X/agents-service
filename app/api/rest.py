@@ -81,21 +81,43 @@ async def _call_gemini(messages: List[ChatMessageModel]) -> dict[str, Any]:
     """
     Llama a Gemini con el formato correcto.
     Gemini espera: {"contents": [{"role": "user", "parts": [{"text": "..."}]}]}
+    Además, inyecta un system prompt financiero para guiar el comportamiento del modelo.
     """
     try:
         client = GeminiClient()
         
-        # Transformar a formato Gemini
-        gemini_messages = []
+        # 🧠 System prompt financiero (rol del agente)
+        system_prompt = {
+            "role": "user",  # Gemini no soporta 'system', pero este primer mensaje actuará como contexto.
+            "parts": [{
+                "text": (
+                    "Eres FinAssist, un asesor financiero personal inteligente. "
+                    "Tu función es ayudar al usuario a analizar y mejorar su situación económica. "
+                    "Debes responder siempre con empatía y precisión, basándote en datos o predicciones previas. "
+                    "Tu enfoque principal es ayudarle a:\n"
+                    "1️⃣ Entender sus gastos y hábitos de consumo.\n"
+                    "2️⃣ Identificar categorías donde gasta más.\n"
+                    "3️⃣ Sugerir formas de ahorro y optimización.\n"
+                    "4️⃣ Explicar tendencias financieras detectadas por el sistema de IA.\n"
+                    "5️⃣ Proyectar presupuestos o escenarios de gastos futuros si se solicitan.\n\n"
+                    "Evita respuestas genéricas. Da ejemplos concretos usando porcentajes, promedios y consejos claros. "
+                    "Responde en un tono profesional pero cercano, con explicaciones fáciles de entender."
+                )
+            }]
+        }
+
+        # Transformar los mensajes del usuario al formato Gemini
+        gemini_messages = [system_prompt]
         for msg in messages:
-            # Gemini no soporta 'system', convertirlo a 'user'
             role = "user" if msg.role == "system" else msg.role
             gemini_messages.append({
                 "role": role,
                 "parts": [{"text": msg.content}]
             })
-        
+
+        # Llamar a Gemini
         return await client.chat(gemini_messages)
+
     except (RuntimeError, httpx.HTTPError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -51,6 +51,7 @@ class GeminiClient:
         # `generateContent` endpoint. Each message becomes an entry with a
         # `role` and `parts` array containing text.
         contents: list[dict] = []
+        logger.debug("Construyendo payload de Gemini a partir de mensajes: {}", messages)
         for m in messages:
             role = m.get("role", "user")
             parts = m.get("parts", [])
@@ -68,6 +69,24 @@ class GeminiClient:
                 })
 
         payload = {"contents": contents}
+
+        # If no contents could be built from messages, return a safe fallback
+        # instead of sending an empty 'contents' array which the API rejects
+        if not contents:
+            logger.warning("Gemini request would have empty contents; returning fallback. incoming_messages={}", messages)
+            combined_prompt = " ".join(
+                part.get("text", "")
+                for m in messages
+                for part in (m.get("parts", []) if isinstance(m, dict) else [])
+            ).strip()
+            return {"candidates": [{"content": {"parts": [{"text": combined_prompt or "[No text provided]"}]}}]}
+
+        # Log payload to help debug invalid-argument 400 errors
+        try:
+            logger.debug("Sending Gemini payload: {}", json.dumps(payload, ensure_ascii=False))
+        except Exception:
+            logger.debug("Sending Gemini payload (unserializable) -- sending raw dict")
+
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(self.url, params={"key": self.api_key}, json=payload)
@@ -93,10 +112,12 @@ class GeminiClient:
                     body = exc.response.text
                 except Exception:
                     body = "<no body>"
+                # Include the payload in the error log to make debugging the 400 easier
                 logger.error(
-                    "Gemini API HTTP error {status}: {body}",
+                    "Gemini API HTTP error {status}: {body} payload={payload}",
                     status=status,
                     body=body,
+                    payload=json.dumps(payload, ensure_ascii=False),
                 )
                 # In dev mode, return safe fallback for 503 (service overloaded) so tests can continue
                 settings = get_settings()
