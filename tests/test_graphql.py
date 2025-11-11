@@ -98,3 +98,7 @@ def test_analyze_document_mutation(monkeypatch) -> None:
     assert payload["data"]["analyzeDocument"]["confidence"] == 0.95
 
 
+
+
+
+

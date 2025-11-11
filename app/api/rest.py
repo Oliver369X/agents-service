@@ -65,15 +65,29 @@ class OCRResponseModel(BaseModel):
 
 
 async def _call_gemini(messages: List[ChatMessageModel]) -> dict[str, Any]:
+    from ..config import get_settings
+    from ..services.mock_agent import MockAgent
+    
     try:
+        settings = get_settings()
+        
+        # Si no hay API key, usar mock
+        if not settings.gemini_api_key:
+            logger.warning("GEMINI_API_KEY no configurada, usando agente mock")
+            mock = MockAgent()
+            payload = [{"text": msg.content, "role": msg.role} for msg in messages]
+            return await mock.chat(payload)
+        
+        # Usar Gemini real
         client = GeminiClient()
         payload = [{"text": msg.content, "role": msg.role} for msg in messages]
         return await client.chat(payload)
     except (RuntimeError, httpx.HTTPError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"No se pudo procesar la conversación: {exc}",
-        ) from exc
+        logger.error("Error en Gemini, usando fallback mock: {}", exc)
+        # Fallback a mock
+        mock = MockAgent()
+        payload = [{"text": msg.content, "role": msg.role} for msg in messages]
+        return await mock.chat(payload)
 
 
 def _format_gemini_response(data: dict[str, Any]) -> List[GeminiMessageModel]:

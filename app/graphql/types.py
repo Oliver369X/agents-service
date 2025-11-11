@@ -37,3 +37,7 @@ class OCRResult:
     raw: Optional[str] = None
 
 
+
+
+
+

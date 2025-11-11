@@ -34,3 +34,7 @@ class MistralOCRClient:
             return response.json()
 
 
+
+
+
+

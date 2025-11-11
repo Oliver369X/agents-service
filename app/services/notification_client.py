@@ -48,3 +48,7 @@ class NotificationClient:
             logger.warning("Fallo al enviar notificación (servicio no disponible): {}", exc)
             return {"status": "error", "message": str(exc)}
 
+
+
+
+

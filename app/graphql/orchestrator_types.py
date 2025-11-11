@@ -41,3 +41,7 @@ class SavingsPlanResult:
     target: Optional[float] = None
     months: Optional[int] = None
 
+
+
+
+

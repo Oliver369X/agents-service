@@ -27,12 +27,16 @@ class GeminiClient:
 
     async def chat(self, messages: list[dict[str, str]]) -> Dict[str, Any]:
         """Invoca el modelo conversacional."""
-        url = f"{self.base_url}/models/gemini-2.5-pro-latest:generateContent"
+        url = f"{self.base_url}/models/gemini-2.0-flash:generateContent"
         payload = {"contents": [{"parts": messages}]}
         async with httpx.AsyncClient(timeout=30.0) as client:
             logger.debug("Enviando solicitud a Gemini")
             response = await client.post(url, json=payload, headers=self.headers, params={"key": self.api_key})
             response.raise_for_status()
             return response.json()
+
+
+
+
 
 

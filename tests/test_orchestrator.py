@@ -121,3 +121,7 @@ async def test_process_document_and_register(monkeypatch, mock_gateway, mock_gem
     mock_gateway.register_transaction.assert_called_once()
     mock_notifier.send_notification.assert_called_once()
 
+
+
+
+
